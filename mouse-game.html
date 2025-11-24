@@ -161,8 +161,7 @@
             position: absolute;
             border-radius: 50%;
             cursor: pointer;
-            transition: transform 0.1s;
-            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.2);
+            transition: transform 0.2s ease-out;
             display: flex;
             align-items: center;
             justify-content: center;
@@ -170,22 +169,119 @@
             font-weight: bold;
             font-size: 1.2em;
             user-select: none;
+            /* 3D效果 */
+            transform-style: preserve-3d;
+            perspective: 1000px;
+            /* 平滑移动 */
+            will-change: transform, left, top;
+            /* 文字阴影，确保在3D球体上清晰可见 */
+            text-shadow: 0 2px 4px rgba(0, 0, 0, 0.5), 0 0 8px rgba(0, 0, 0, 0.3);
+            z-index: 1;
+        }
+
+        /* 3D球体效果 - 使用伪元素创建高光 */
+        .target::before {
+            content: '';
+            position: absolute;
+            top: 15%;
+            left: 25%;
+            width: 35%;
+            height: 35%;
+            border-radius: 50%;
+            background: radial-gradient(circle, rgba(255, 255, 255, 0.6) 0%, transparent 70%);
+            pointer-events: none;
+            z-index: 0;
+        }
+
+        .target::after {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            border-radius: 50%;
+            background: inherit;
+            filter: blur(2px);
+            opacity: 0.3;
+            z-index: -1;
+            transform: translateZ(-10px);
         }
 
         .target:hover {
-            transform: scale(1.1);
+            transform: scale(1.15) rotateY(15deg) rotateX(15deg);
         }
 
+        /* 单击目标 - 绿色3D球 */
         .target.click {
-            background: linear-gradient(135deg, #11998e 0%, #38ef7d 100%);
+            background: radial-gradient(circle at 30% 30%, #38ef7d 0%, #11998e 50%, #0d7a6b 100%);
+            box-shadow:
+                0 10px 30px rgba(17, 153, 142, 0.4),
+                0 5px 15px rgba(17, 153, 142, 0.3),
+                inset 0 -5px 20px rgba(13, 122, 107, 0.5),
+                inset 0 5px 20px rgba(56, 239, 125, 0.3);
         }
 
+        /* 双击目标 - 粉色3D球 */
         .target.double-click {
-            background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+            background: radial-gradient(circle at 30% 30%, #f5576c 0%, #f093fb 50%, #c471ed 100%);
+            box-shadow:
+                0 10px 30px rgba(240, 147, 251, 0.4),
+                0 5px 15px rgba(240, 147, 251, 0.3),
+                inset 0 -5px 20px rgba(196, 113, 237, 0.5),
+                inset 0 5px 20px rgba(245, 87, 108, 0.3);
         }
 
+        /* 移动目标 - 蓝色3D球 */
         .target.move {
-            background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%);
+            background: radial-gradient(circle at 30% 30%, #00f2fe 0%, #4facfe 50%, #3a7bd5 100%);
+            box-shadow:
+                0 10px 30px rgba(79, 172, 254, 0.4),
+                0 5px 15px rgba(79, 172, 254, 0.3),
+                inset 0 -5px 20px rgba(58, 123, 213, 0.5),
+                inset 0 5px 20px rgba(0, 242, 254, 0.3);
+            /* 移动目标使用平滑的CSS transition */
+            transition: left 0.6s cubic-bezier(0.4, 0, 0.2, 1),
+                top 0.6s cubic-bezier(0.4, 0, 0.2, 1),
+                transform 0.2s ease-out;
+        }
+
+        /* 移动目标的动画效果 */
+        .target.move.animating {
+            animation: float 2s ease-in-out infinite;
+        }
+
+        @keyframes float {
+
+            0%,
+            100% {
+                transform: translateY(0px) rotateY(0deg);
+            }
+
+            50% {
+                transform: translateY(-5px) rotateY(10deg);
+            }
+        }
+
+        /* 目标出现时的3D动画 */
+        .target {
+            animation: appear3D 0.5s ease-out;
+        }
+
+        @keyframes appear3D {
+            0% {
+                transform: scale(0) rotateY(180deg) rotateX(90deg);
+                opacity: 0;
+            }
+
+            50% {
+                transform: scale(1.1) rotateY(90deg) rotateX(45deg);
+            }
+
+            100% {
+                transform: scale(1) rotateY(0deg) rotateX(0deg);
+                opacity: 1;
+            }
         }
 
         .game-over-screen {
@@ -505,19 +601,59 @@
 
             gameState.targets.push(targetInfo);
 
-            // 如果是移动类型，让目标移动
+            // 如果是移动类型，让目标移动 - 使用平滑动画
             if (type === 'move') {
-                targetInfo.moveInterval = setInterval(() => {
-                    if (!targetInfo.clicked && gameState.isPlaying) {
-                        const newX = Math.random() * maxX + padding;
-                        const newY = Math.random() * maxY + padding;
-                        target.style.transition = `all ${0.5 / config.moveSpeed}s ease-out`;
-                        target.style.left = newX + 'px';
-                        target.style.top = newY + 'px';
-                        targetInfo.x = newX;
-                        targetInfo.y = newY;
+                target.classList.add('animating');
+
+                // 使用 requestAnimationFrame 实现平滑移动
+                let animationId = null;
+                let startX = x;
+                let startY = y;
+                let targetX = x;
+                let targetY = y;
+                let startTime = Date.now();
+                const moveDuration = 2000 / config.moveSpeed; // 根据难度调整移动时间
+
+                function animateMove() {
+                    if (targetInfo.clicked || !gameState.isPlaying) {
+                        if (animationId) {
+                            cancelAnimationFrame(animationId);
+                        }
+                        return;
                     }
-                }, 1000 / config.moveSpeed);
+
+                    const currentTime = Date.now();
+                    const elapsed = currentTime - startTime;
+                    const progress = Math.min(elapsed / moveDuration, 1);
+
+                    // 使用缓动函数实现平滑移动
+                    const easeProgress = easeInOutCubic(progress);
+                    const currentX = startX + (targetX - startX) * easeProgress;
+                    const currentY = startY + (targetY - startY) * easeProgress;
+
+                    target.style.left = currentX + 'px';
+                    target.style.top = currentY + 'px';
+                    targetInfo.x = currentX;
+                    targetInfo.y = currentY;
+
+                    if (progress >= 1) {
+                        // 到达目标位置，设置新的目标
+                        startX = targetX;
+                        startY = targetY;
+                        targetX = Math.random() * maxX + padding;
+                        targetY = Math.random() * maxY + padding;
+                        startTime = Date.now();
+                    }
+
+                    animationId = requestAnimationFrame(animateMove);
+                }
+
+                // 初始化第一个目标位置
+                targetX = Math.random() * maxX + padding;
+                targetY = Math.random() * maxY + padding;
+                startTime = Date.now();
+                animationId = requestAnimationFrame(animateMove);
+                targetInfo.animationId = animationId;
             }
 
             // 设置点击事件
@@ -606,6 +742,13 @@
             updateDisplay();
         }
 
+        // 缓动函数 - 实现平滑的动画效果
+        function easeInOutCubic(t) {
+            return t < 0.5
+                ? 4 * t * t * t
+                : 1 - Math.pow(-2 * t + 2, 3) / 2;
+        }
+
         // 移除目标
         function removeTarget(targetInfo, hit) {
             if (!hit) {
@@ -613,12 +756,16 @@
                 gameState.combo = 0;
             }
 
+            // 取消移动动画
             if (targetInfo.moveInterval) {
                 clearInterval(targetInfo.moveInterval);
             }
+            if (targetInfo.animationId) {
+                cancelAnimationFrame(targetInfo.animationId);
+            }
 
             targetInfo.element.style.transition = 'all 0.3s';
-            targetInfo.element.style.transform = 'scale(0)';
+            targetInfo.element.style.transform = 'scale(0) rotateY(180deg)';
             targetInfo.element.style.opacity = '0';
 
             setTimeout(() => {
@@ -697,6 +844,9 @@
             gameState.targets.forEach(target => {
                 if (target.moveInterval) {
                     clearInterval(target.moveInterval);
+                }
+                if (target.animationId) {
+                    cancelAnimationFrame(target.animationId);
                 }
                 target.element.remove();
             });
